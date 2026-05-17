@@ -11,15 +11,17 @@ st.markdown("""
 입력값은 반드시 **0.0000에서 1.0000 사이**여야 합니다.
 """)
 
-# 가장 안전한 표준 gspread 방식으로 구글 시트 직접 연결
 @st.cache_resource
 def get_gspread_client():
-    # Secrets에 저장된 기존 구글 서비스 계정 정보를 토대로 인증 진행
+    # secrets 파일에 한 줄로 들어간 \n 문자를 시스템이 올바르게 해독할 수 있도록 개행 처리(.replace) 적용
+    raw_key = st.secrets["connections"]["gsheets"]["private_key"]
+    fixed_key = raw_key.replace("\\n", "\n") if "\\n" in raw_key else raw_key
+
     credentials = {
         "type": st.secrets["connections"]["gsheets"]["type"],
         "project_id": st.secrets["connections"]["gsheets"]["project_id"],
         "private_key_id": st.secrets["connections"]["gsheets"]["private_key_id"],
-        "private_key": st.secrets["connections"]["gsheets"]["private_key"],
+        "private_key": fixed_key,
         "client_email": st.secrets["connections"]["gsheets"]["client_email"],
         "client_id": st.secrets["connections"]["gsheets"]["client_id"],
         "auth_uri": st.secrets["connections"]["gsheets"]["auth_uri"],
@@ -32,11 +34,9 @@ def get_gspread_client():
 
 try:
     gc = get_gspread_client()
-    # URL 주소에서 스프레드시트 열기
     sh = gc.open_by_url(st.secrets["connections"]["gsheets"]["spreadsheet"])
-    worksheet = sh.get_worksheet(0) # 첫 번째 시트 선택
+    worksheet = sh.get_worksheet(0)
     
-    # 기존 데이터 로드
     records = worksheet.get_all_records()
     if records:
         existing_data = pd.DataFrame(records)
@@ -152,12 +152,10 @@ if st.button("🚀 모든 데이터 최종 제출하기", use_container_width=Tr
                     ])
             
             try:
-                # 만약 구글 시트가 완전히 비어있다면 제목 행 먼저 생성
                 if not worksheet.get_all_values():
                     headers = ["student_id", "model", "scenario", "proposer_type", "responder_type", "stake", "offer_ratio", "mao_ratio", "deal_status", "essay"]
                     worksheet.append_row(headers)
                 
-                # 데이터 행 일괄 추가
                 worksheet.append_rows(new_rows)
                 st.session_state['submitted'] = True
                 st.success("🎉 모든 데이터가 완벽하게 검증 및 저장되었습니다! 집계 현황판이 잠금 해제됩니다.")
