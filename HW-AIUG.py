@@ -1,0 +1,154 @@
+import streamlit as st
+from streamlit_gsheets import GSheetsConnection
+import pandas as pd
+
+st.set_page_config(page_title="최후통첩 게임 데이터 입력 시스템", layout="wide")
+
+st.title("🎮 AIUG 최후통첩 게임 데이터 제출 시스템")
+st.markdown("""
+**💡 데이터 입력 팁 (엑셀 호환)**
+엑셀 파일에서 숫자 영역(16행 2열)만 복사(Ctrl+C)한 뒤, 표의 첫 번째 빈칸을 클릭하고 붙여넣기(Ctrl+V) 하세요.
+입력값은 반드시 **0.0000에서 1.0000 사이**여야 합니다.
+""")
+
+# 1. 구글 시트 연결
+conn = st.connection("gsheets", type=GSheetsConnection)
+try:
+    existing_data = conn.read(ttl=5)
+except:
+    existing_data = pd.DataFrame()
+
+if 'submitted' not in st.session_state:
+    st.session_state['submitted'] = False
+
+MODELS = ["ChatGPT", "Gemini", "Copilot", "Claude"]
+STAKES = ["1만원", "10만원", "100만원", "1000만원"]
+# 각 시나리오별 제안자/응답자 타입 정의
+SCENARIOS = {"1HH": ("H", "H"), "2AA": ("A", "A"), "3AH": ("A", "H"), "4HA": ("H", "A")}
+
+st.subheader("✍️ 1. 학생 정보 및 에세이 입력")
+col_id, _ = st.columns([1, 2])
+with col_id:
+    student_id = st.text_input("학번 (10자리)", max_chars=10)
+essay = st.text_area("실험 분석 짧은 에세이", placeholder="데이터를 바탕으로 관찰된 행동 패턴을 분석해 주세요...")
+
+st.divider()
+st.subheader("📊 2. 시나리오별 데이터 입력")
+
+tabs = st.tabs(["📄 1HH 탭", "📄 2AA 탭", "📄 3AH 탭", "📄 4HA 탭"])
+all_edited_data = {}
+
+# 탭별 데이터 에디터 생성
+for tab, (sheet_name, (prop_type, resp_type)) in zip(tabs, SCENARIOS.items()):
+    with tab:
+        # 탭에 따라 Human/AI 제목 동적 변경
+        prop_base_label = f"{'Human' if prop_type == 'H' else 'AI'}제안"
+        resp_base_label = f"{'Human' if resp_type == 'H' else 'AI'}수용"
+        
+        # UI에 표시될 직관적인 제목
+        prop_display_label = f"{prop_base_label} (0~1)"
+        resp_display_label = f"{resp_base_label} (0~1)"
+        
+        template_data = []
+        for stake in STAKES:
+            for model in MODELS:
+                template_data.append({
+                    "금액": stake, 
+                    "AI모델": model, 
+                    prop_base_label: None, 
+                    resp_base_label: None
+                })
+        
+        df_template = pd.DataFrame(template_data)
+        
+        edited_df = st.data_editor(
+            df_template,
+            disabled=["금액", "AI모델"],
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                prop_base_label: st.column_config.NumberColumn(prop_display_label, min_value=0.0, max_value=1.0, format="%.4f", required=True),
+                resp_base_label: st.column_config.NumberColumn(resp_display_label, min_value=0.0, max_value=1.0, format="%.4f", required=True)
+            },
+            key=f"editor_{sheet_name}"
+        )
+        all_edited_data[sheet_name] = edited_df
+
+st.divider()
+
+# 3. 제출 및 데이터 검증 로직
+if st.button("🚀 모든 데이터 최종 제출하기", use_container_width=True):
+    if not student_id or not essay:
+        st.error("❌ 학번과 에세이를 모두 입력해 주세요.")
+    else:
+        has_empty_cells = False
+        has_invalid_values = False
+        
+        # 모든 탭의 데이터 무결성 검증
+        for sheet_name, (prop_type, resp_type) in SCENARIOS.items():
+            df = all_edited_data[sheet_name]
+            prop_base_label = f"{'Human' if prop_type == 'H' else 'AI'}제안"
+            resp_base_label = f"{'Human' if resp_type == 'H' else 'AI'}수용"
+            
+            for _, row in df.iterrows():
+                try:
+                    offer_val = float(row[prop_base_label])
+                    mao_val = float(row[resp_base_label])
+                    
+                    # 0.0000 ~ 1.0000 범위 확인
+                    if not (0.0 <= offer_val <= 1.0) or not (0.0 <= mao_val <= 1.0):
+                        has_invalid_values = True
+                except (ValueError, TypeError):
+                    # 빈칸이거나 숫자가 아닌 값이 들어온 경우
+                    has_empty_cells = True
+        
+        # 검증 결과에 따른 처리
+        if has_empty_cells:
+            st.error("❌ 빈칸이 있거나 숫자가 아닌 값이 포함되어 있습니다. 모든 표를 올바르게 채워주세요.")
+        elif has_invalid_values:
+            st.error("❌ 입력된 값 중에 **0.0000 ~ 1.0000 범위를 벗어난 값**이 있습니다. 엑셀 파일의 데이터를 확인하고 다시 붙여넣어 주세요.")
+        else:
+            # 모든 검증 통과 시 데이터베이스 저장
+            new_rows = []
+            for sheet_name, (prop_type, resp_type) in SCENARIOS.items():
+                df = all_edited_data[sheet_name]
+                prop_base_label = f"{'Human' if prop_type == 'H' else 'AI'}제안"
+                resp_base_label = f"{'Human' if resp_type == 'H' else 'AI'}수용"
+                
+                for _, row in df.iterrows():
+                    offer_val = float(row[prop_base_label])
+                    mao_val = float(row[resp_base_label])
+                    
+                    new_rows.append({
+                        "student_id": student_id,
+                        "model": row["AI모델"],
+                        "scenario": sheet_name[1:],
+                        "proposer_type": prop_type,
+                        "responder_type": resp_type,
+                        "stake": row["금액"],
+                        "offer_ratio": offer_val,
+                        "mao_ratio": mao_val,
+                        "deal_status": "성사" if offer_val >= mao_val else "파기",
+                        "essay": essay
+                    })
+            
+            final_new_df = pd.DataFrame(new_rows)
+            updated_df = pd.concat([existing_data, final_new_df], ignore_index=True)
+            conn.update(data=updated_df)
+            
+            st.session_state['submitted'] = True
+            st.success("🎉 모든 데이터가 완벽하게 검증 및 저장되었습니다! 집계 현황판이 잠금 해제됩니다.")
+            st.balloons()
+
+# 4. 집계 결과 (조건부 잠금)
+st.subheader("📈 3. 실시간 클래스 집계 현황판")
+if st.session_state['submitted']:
+    if not existing_data.empty:
+        st.metric(label="현재 클래스 전체 누적 데이터 수", value=f"{len(existing_data)} 건")
+        chart_data = existing_data.groupby("model")[["offer_ratio", "mao_ratio"]].mean().reset_index()
+        melted_chart = chart_data.melt(id_vars=["model"], var_name="비율 종류", value_name="평균 비율")
+        st.bar_chart(data=melted_chart, x="model", y="평균 비율", color="비율 종류", use_container_width=True)
+    else:
+        st.info("데이터베이스에 연결되었으나 아직 축적된 데이터가 없습니다.")
+else:
+    st.warning("🔒 본인의 데이터 입력을 모두 마치고 [최종 제출하기] 버튼을 누르시면, 클래스 전체 학생들의 실시간 집계 그래프를 볼 수 있습니다.")
