@@ -2,21 +2,18 @@ import streamlit as st
 import pandas as pd
 import gspread
 
-st.set_page_config(page_title="최후통첩 게임 데이터 입력 시스템", layout="wide")
+st.set_page_config(page_title="AI-Human Ultimatum Game 실험 제출 시스템", layout="wide")
 
-st.title("🎮 AIUG 최후통첩 게임 데이터 제출 시스템")
+st.title("🎮 AI-Human Ultimatum Game 실험 제출 시스템")
 st.markdown("""
 **💡 데이터 입력 팁 (엑셀 호환)**
-엑셀 파일에서 숫자 영역(16행 2열)만 복사(Ctrl+C)한 뒤, 아래 표의 첫 번째 빈칸을 클릭하고 붙여넣기(Ctrl+V) 하세요.
-입력값은 반드시 **0.0000에서 1.0000 사이**여야 합니다.
+제출용 엑셀 파일에서 숫자영역(16행 2열)만 복사(Ctrl+C)한 뒤, 아래 표의 첫 번째 빈칸을 클릭하고 붙여넣기(Ctrl+V) 하세요. 입력값은 반드시 **0에서 1사이**여야 합니다.
 """)
 
 @st.cache_resource
 def get_gspread_client():
-    # secrets 파일에 한 줄로 들어간 \n 문자를 시스템이 올바르게 해독할 수 있도록 개행 처리(.replace) 적용
     raw_key = st.secrets["connections"]["gsheets"]["private_key"]
     fixed_key = raw_key.replace("\\n", "\n") if "\\n" in raw_key else raw_key
-
     credentials = {
         "type": st.secrets["connections"]["gsheets"]["type"],
         "project_id": st.secrets["connections"]["gsheets"]["project_id"],
@@ -53,11 +50,11 @@ MODELS = ["ChatGPT", "Gemini", "Copilot", "Claude"]
 STAKES = ["1만원", "10만원", "100만원", "1000만원"]
 SCENARIOS = {"1HH": ("H", "H"), "2AA": ("A", "A"), "3AH": ("A", "H"), "4HA": ("H", "A")}
 
-st.subheader("✍️ 1. 학생 정보 및 에세이 입력")
+st.subheader("✍️ 1. 학생 정보 및 분석 내용 입력")
 col_id, _ = st.columns([1, 2])
 with col_id:
-    student_id = st.text_input("학번 (10자리)", max_chars=10)
-essay = st.text_area("실험 분석 짧은 에세이", placeholder="데이터를 바탕으로 관찰된 행동 패턴을 분석해 주세요...")
+    student_id = st.text_input("학번 (9자리)", max_chars=9)
+essay = st.text_area("실험결과 분석", placeholder="AI UG 실험결과를 분석하시오")
 
 st.divider()
 st.subheader("📊 2. 시나리오별 데이터 입력")
@@ -124,9 +121,9 @@ if st.button("🚀 모든 데이터 최종 제출하기", use_container_width=Tr
                         has_empty_cells = True
         
         if has_empty_cells:
-            st.error("❌ 빈칸이 있거나 숫자가 아닌 값이 포함되어 있습니다. 모든 표를 올바르게 채워주세요.")
+            st.error("❌ 빈칸이 있거나 숫자가 아닌 값이 포함되어 있습니다. 모든표를 올바르게 채워주세요.")
         elif has_invalid_values:
-            st.error("❌ 입력된 값 중에 **0.0000 ~ 1.0000 범위를 벗어난 값**이 있습니다. 다시 확인해 주세요.")
+            st.error("❌ 입력된 값 중에 **0 ~ 1 범위를 벗어난 값**이 있습니다. 다시 확인해 주세요.")
         else:
             new_rows = []
             for sheet_name, (prop_type, resp_type) in SCENARIOS.items():
@@ -181,4 +178,4 @@ if st.session_state['submitted']:
     except Exception as e:
         st.info("실시간 차트를 불러오는 중입니다...")
 else:
-    st.warning("🔒 본인의 데이터 입력을 모두 마치고 [최종 제출하기] 버튼을 누르시면, 클래스 전체 학생들의 실시간 집계 그래프를 볼 수 있습니다.")
+    st.warning("🔒 본인의 데이터 입력을 모두 마치고 [최종 제출하기] 버튼을 누르시면, 클래스 전체 학생들이 제출한 집계 그래프를 실시간으로 볼 수 있습니다.")
