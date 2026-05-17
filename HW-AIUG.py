@@ -1,6 +1,6 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
+import gspread
 
 st.set_page_config(page_title="최후통첩 게임 데이터 입력 시스템", layout="wide")
 
@@ -11,11 +11,36 @@ st.markdown("""
 입력값은 반드시 **0.0000에서 1.0000 사이**여야 합니다.
 """)
 
-# 1. 구글 시트 연결
-conn = st.connection("gsheets", type=GSheetsConnection)
+# 가장 안전한 표준 gspread 방식으로 구글 시트 직접 연결
+@st.cache_resource
+def get_gspread_client():
+    # Secrets에 저장된 구글 서비스 계정 정보를 토대로 인증 진행
+    credentials = {
+        "type": st.secrets["connections"]["gsheets"]["type"],
+        "project_id": st.secrets["connections"]["gsheets"]["project_id"],
+        "private_key_id": st.secrets["connections"]["gsheets"]["private_key_id"],
+        "private_key": st.secrets["connections"]["gsheets"]["private_key"],
+        "client_email": st.secrets["connections"]["gsheets"]["client_email"],
+        "client_id": st.secrets["connections"]["gsheets"]["client_id"],
+        "auth_uri": st.secrets["connections"]["gsheets"]["auth_uri"],
+        "token_uri": st.secrets["connections"]["gsheets"]["token_uri"],
+        "auth_provider_x509_cert_url": st.secrets["connections"]["gsheets"]["auth_provider_x509_cert_url"],
+        "client_x509_cert_url": st.secrets["connections"]["gsheets"]["client_x509_cert_url"]
+    }
+    gc = gspread.service_account_from_dict(credentials)
+    return gc
+
 try:
-    existing_data = conn.read(ttl=5)
-except:
+    gc = get_gspread_client()
+    # URL 주소에서 스프레드시트 열기
+    sh = gc.open_by_url(st.secrets["connections"]["gsheets"]["spreadsheet"])
+    worksheet = sh.get_worksheet(0) # 첫 번째 시트 선택
+    
+    # 기존 데이터 로드 (첫 줄 제목 제외)
+    records = worksheet.get_all_records()
+    existing_data = pd.DataFrame(records)
+except Exception as e:
+    st.error(f"구글 시트 로드 중 오류 발생: {e}")
     existing_data = pd.DataFrame()
 
 if 'submitted' not in st.session_state:
@@ -71,7 +96,6 @@ for tab, (sheet_name, (prop_type, resp_type)) in zip(tabs, SCENARIOS.items()):
 
 st.divider()
 
-# 3. 제출 및 데이터 검증 로직
 if st.button("🚀 모든 데이터 최종 제출하기", use_container_width=True):
     if not student_id or not essay:
         st.error("❌ 학번과 에세이를 모두 입력해 주세요.")
@@ -108,36 +132,46 @@ if st.button("🚀 모든 데이터 최종 제출하기", use_container_width=Tr
                     offer_val = float(row[prop_base_label])
                     mao_val = float(row[resp_base_label])
                     
-                    new_rows.append({
-                        "student_id": student_id,
-                        "model": row["AI모델"],
-                        "scenario": sheet_name[1:],
-                        "proposer_type": prop_type,
-                        "responder_type": resp_type,
-                        "stake": row["금액"],
-                        "offer_ratio": offer_val,
-                        "mao_ratio": mao_val,
-                        "deal_status": "성사" if offer_val >= mao_val else "파기",
-                        "essay": essay
-                    })
+                    # 구글 시트에 들어갈 순서대로 리스트 생성
+                    new_rows.append([
+                        student_id,
+                        row["AI모델"],
+                        sheet_name[1:],
+                        prop_type,
+                        resp_type,
+                        row["금액"],
+                        offer_val,
+                        mao_val,
+                        "성사" if offer_val >= mao_val else "파기",
+                        essay
+                    ])
             
-            final_new_df = pd.DataFrame(new_rows)
-            updated_df = pd.concat([existing_data, final_new_df], ignore_index=True)
-            conn.update(data=updated_df)
-            
-            st.session_state['submitted'] = True
-            st.success("🎉 모든 데이터가 완벽하게 검증 및 저장되었습니다! 집계 현황판이 잠금 해제됩니다.")
-            st.balloons()
+            try:
+                # 구글 시트에 리스트를 한 번에 하단에 추가(Append)
+                worksheet.append_rows(new_rows)
+                st.session_state['submitted'] = True
+                st.success("🎉 모든 데이터가 완벽하게 검증 및 저장되었습니다! 집계 현황판이 잠금 해제됩니다.")
+                st.balloons()
+                st.rerun()
+            except Exception as e:
+                st.error(f"데이터 저장 실패: {e}")
 
 # 4. 집계 결과 (조건부 잠금)
 st.subheader("📈 3. 실시간 클래스 집계 현황판")
 if st.session_state['submitted']:
-    if not existing_data.empty:
-        st.metric(label="현재 클래스 전체 누적 데이터 수", value=f"{len(existing_data)} 건")
-        chart_data = existing_data.groupby("model")[["offer_ratio", "mao_ratio"]].mean().reset_index()
-        melted_chart = chart_data.melt(id_vars=["model"], var_name="비율 종류", value_name="평균 비율")
-        st.bar_chart(data=melted_chart, x="model", y="평균 비율", color="비율 종류", use_container_width=True)
-    else:
-        st.info("데이터베이스에 연결되었으나 아직 축적된 데이터가 없습니다.")
+    try:
+        # 최신화된 데이터 다시 읽기
+        records = worksheet.get_all_records()
+        updated_data = pd.DataFrame(records)
+        
+        if not updated_data.empty:
+            st.metric(label="현재 클래스 전체 누적 데이터 수", value=f"{len(updated_data)} 건")
+            chart_data = updated_data.groupby("model")[["offer_ratio", "mao_ratio"]].mean().reset_index()
+            melted_chart = chart_data.melt(id_vars=["model"], var_name="비율 종류", value_name="평균 비율")
+            st.bar_chart(data=melted_chart, x="model", y="평균 비율", color="비율 종류", use_container_width=True)
+        else:
+            st.info("데이터베이스에 축적된 데이터가 없습니다.")
+    except:
+        st.info("차트를 그리는 도중 오류가 발생했습니다.")
 else:
     st.warning("🔒 본인의 데이터 입력을 모두 마치고 [최종 제출하기] 버튼을 누르시면, 클래스 전체 학생들의 실시간 집계 그래프를 볼 수 있습니다.")
