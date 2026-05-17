@@ -2,12 +2,12 @@ import streamlit as st
 import pandas as pd
 import gspread
 
-st.set_page_config(page_title="AI-Human Ultimatum Game 실험 제출 시스템", layout="wide")
+st.set_page_config(page_title="AI-Human Ultimatum Game 실험 결과 제출 시스템", layout="wide")
 
 st.title("🎮 AI-Human Ultimatum Game 실험 제출 시스템")
 st.markdown("""
-**💡 데이터 입력 팁 (엑셀 호환)**
-제출용 엑셀 파일에서 숫자영역(16행 2열)만 복사(Ctrl+C)한 뒤, 아래 표의 첫 번째 빈칸을 클릭하고 붙여넣기(Ctrl+V) 하세요. 입력값은 반드시 **0에서 1사이**여야 합니다.
+**💡 데이터 입력 팁 (엑셀 호환):**
+제출용 엑셀 파일에서 숫자영역(16행 2열)만 전체적으로 복사(Ctrl+C)한 뒤, 아래 표의 첫 번째 빈칸을 클릭하고 붙여넣기(Ctrl+V) 하세요. 입력값은 반드시 **0에서 1사이**여야 합니다.
 """)
 
 @st.cache_resource
