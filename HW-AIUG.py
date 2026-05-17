@@ -7,7 +7,7 @@ st.set_page_config(page_title="최후통첩 게임 데이터 입력 시스템", 
 st.title("🎮 AIUG 최후통첩 게임 데이터 제출 시스템")
 st.markdown("""
 **💡 데이터 입력 팁 (엑셀 호환)**
-엑셀 파일에서 숫자 영역(16행 2열)만 복사(Ctrl+C)한 뒤, 표의 첫 번째 빈칸을 클릭하고 붙여넣기(Ctrl+V) 하세요.
+엑셀 파일에서 숫자 영역(16행 2열)만 복사(Ctrl+C)한 뒤, 아래 표의 첫 번째 빈칸을 클릭하고 붙여넣기(Ctrl+V) 하세요.
 입력값은 반드시 **0.0000에서 1.0000 사이**여야 합니다.
 """)
 
@@ -23,7 +23,6 @@ if 'submitted' not in st.session_state:
 
 MODELS = ["ChatGPT", "Gemini", "Copilot", "Claude"]
 STAKES = ["1만원", "10만원", "100만원", "1000만원"]
-# 각 시나리오별 제안자/응답자 타입 정의
 SCENARIOS = {"1HH": ("H", "H"), "2AA": ("A", "A"), "3AH": ("A", "H"), "4HA": ("H", "A")}
 
 st.subheader("✍️ 1. 학생 정보 및 에세이 입력")
@@ -38,14 +37,10 @@ st.subheader("📊 2. 시나리오별 데이터 입력")
 tabs = st.tabs(["📄 1HH 탭", "📄 2AA 탭", "📄 3AH 탭", "📄 4HA 탭"])
 all_edited_data = {}
 
-# 탭별 데이터 에디터 생성
 for tab, (sheet_name, (prop_type, resp_type)) in zip(tabs, SCENARIOS.items()):
     with tab:
-        # 탭에 따라 Human/AI 제목 동적 변경
         prop_base_label = f"{'Human' if prop_type == 'H' else 'AI'}제안"
         resp_base_label = f"{'Human' if resp_type == 'H' else 'AI'}수용"
-        
-        # UI에 표시될 직관적인 제목
         prop_display_label = f"{prop_base_label} (0~1)"
         resp_display_label = f"{resp_base_label} (0~1)"
         
@@ -84,7 +79,6 @@ if st.button("🚀 모든 데이터 최종 제출하기", use_container_width=Tr
         has_empty_cells = False
         has_invalid_values = False
         
-        # 모든 탭의 데이터 무결성 검증
         for sheet_name, (prop_type, resp_type) in SCENARIOS.items():
             df = all_edited_data[sheet_name]
             prop_base_label = f"{'Human' if prop_type == 'H' else 'AI'}제안"
@@ -94,21 +88,16 @@ if st.button("🚀 모든 데이터 최종 제출하기", use_container_width=Tr
                 try:
                     offer_val = float(row[prop_base_label])
                     mao_val = float(row[resp_base_label])
-                    
-                    # 0.0000 ~ 1.0000 범위 확인
                     if not (0.0 <= offer_val <= 1.0) or not (0.0 <= mao_val <= 1.0):
                         has_invalid_values = True
-                except (ValueError, TypeError):
-                    # 빈칸이거나 숫자가 아닌 값이 들어온 경우
+                except:
                     has_empty_cells = True
         
-        # 검증 결과에 따른 처리
         if has_empty_cells:
             st.error("❌ 빈칸이 있거나 숫자가 아닌 값이 포함되어 있습니다. 모든 표를 올바르게 채워주세요.")
         elif has_invalid_values:
-            st.error("❌ 입력된 값 중에 **0.0000 ~ 1.0000 범위를 벗어난 값**이 있습니다. 엑셀 파일의 데이터를 확인하고 다시 붙여넣어 주세요.")
+            st.error("❌ 입력된 값 중에 **0.0000 ~ 1.0000 범위를 벗어난 값**이 있습니다. 다시 확인해 주세요.")
         else:
-            # 모든 검증 통과 시 데이터베이스 저장
             new_rows = []
             for sheet_name, (prop_type, resp_type) in SCENARIOS.items():
                 df = all_edited_data[sheet_name]
