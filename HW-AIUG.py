@@ -14,7 +14,7 @@ st.markdown("""
 # 가장 안전한 표준 gspread 방식으로 구글 시트 직접 연결
 @st.cache_resource
 def get_gspread_client():
-    # Secrets에 저장된 구글 서비스 계정 정보를 토대로 인증 진행
+    # Secrets에 저장된 기존 구글 서비스 계정 정보를 토대로 인증 진행
     credentials = {
         "type": st.secrets["connections"]["gsheets"]["type"],
         "project_id": st.secrets["connections"]["gsheets"]["project_id"],
@@ -36,11 +36,14 @@ try:
     sh = gc.open_by_url(st.secrets["connections"]["gsheets"]["spreadsheet"])
     worksheet = sh.get_worksheet(0) # 첫 번째 시트 선택
     
-    # 기존 데이터 로드 (첫 줄 제목 제외)
+    # 기존 데이터 로드
     records = worksheet.get_all_records()
-    existing_data = pd.DataFrame(records)
+    if records:
+        existing_data = pd.DataFrame(records)
+    else:
+        existing_data = pd.DataFrame()
 except Exception as e:
-    st.error(f"구글 시트 로드 중 오류 발생: {e}")
+    st.error(f"구글 시트 연동 중 오류 발생: {e}")
     existing_data = pd.DataFrame()
 
 if 'submitted' not in st.session_state:
@@ -109,13 +112,16 @@ if st.button("🚀 모든 데이터 최종 제출하기", use_container_width=Tr
             resp_base_label = f"{'Human' if resp_type == 'H' else 'AI'}수용"
             
             for _, row in df.iterrows():
-                try:
-                    offer_val = float(row[prop_base_label])
-                    mao_val = float(row[resp_base_label])
-                    if not (0.0 <= offer_val <= 1.0) or not (0.0 <= mao_val <= 1.0):
-                        has_invalid_values = True
-                except:
+                if pd.isna(row[prop_base_label]) or pd.isna(row[resp_base_label]):
                     has_empty_cells = True
+                else:
+                    try:
+                        offer_val = float(row[prop_base_label])
+                        mao_val = float(row[resp_base_label])
+                        if not (0.0 <= offer_val <= 1.0) or not (0.0 <= mao_val <= 1.0):
+                            has_invalid_values = True
+                    except:
+                        has_empty_cells = True
         
         if has_empty_cells:
             st.error("❌ 빈칸이 있거나 숫자가 아닌 값이 포함되어 있습니다. 모든 표를 올바르게 채워주세요.")
@@ -132,7 +138,6 @@ if st.button("🚀 모든 데이터 최종 제출하기", use_container_width=Tr
                     offer_val = float(row[prop_base_label])
                     mao_val = float(row[resp_base_label])
                     
-                    # 구글 시트에 들어갈 순서대로 리스트 생성
                     new_rows.append([
                         student_id,
                         row["AI모델"],
@@ -147,7 +152,12 @@ if st.button("🚀 모든 데이터 최종 제출하기", use_container_width=Tr
                     ])
             
             try:
-                # 구글 시트에 리스트를 한 번에 하단에 추가(Append)
+                # 만약 구글 시트가 완전히 비어있다면 제목 행 먼저 생성
+                if not worksheet.get_all_values():
+                    headers = ["student_id", "model", "scenario", "proposer_type", "responder_type", "stake", "offer_ratio", "mao_ratio", "deal_status", "essay"]
+                    worksheet.append_row(headers)
+                
+                # 데이터 행 일괄 추가
                 worksheet.append_rows(new_rows)
                 st.session_state['submitted'] = True
                 st.success("🎉 모든 데이터가 완벽하게 검증 및 저장되었습니다! 집계 현황판이 잠금 해제됩니다.")
@@ -160,7 +170,6 @@ if st.button("🚀 모든 데이터 최종 제출하기", use_container_width=Tr
 st.subheader("📈 3. 실시간 클래스 집계 현황판")
 if st.session_state['submitted']:
     try:
-        # 최신화된 데이터 다시 읽기
         records = worksheet.get_all_records()
         updated_data = pd.DataFrame(records)
         
@@ -171,7 +180,7 @@ if st.session_state['submitted']:
             st.bar_chart(data=melted_chart, x="model", y="평균 비율", color="비율 종류", use_container_width=True)
         else:
             st.info("데이터베이스에 축적된 데이터가 없습니다.")
-    except:
-        st.info("차트를 그리는 도중 오류가 발생했습니다.")
+    except Exception as e:
+        st.info("실시간 차트를 불러오는 중입니다...")
 else:
     st.warning("🔒 본인의 데이터 입력을 모두 마치고 [최종 제출하기] 버튼을 누르시면, 클래스 전체 학생들의 실시간 집계 그래프를 볼 수 있습니다.")
