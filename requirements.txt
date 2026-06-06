@@ -1,3 +1,6 @@
-streamlit
-gspread
 pandas
+numpy
+plotly
+scipy
+openpyxl
+streamlit
